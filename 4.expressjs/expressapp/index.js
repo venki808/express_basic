@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('./database');
+const initTables = require('./initTables');
 
 const app = express();
 app.use(express.json()); // parse JSON request body
@@ -166,8 +167,9 @@ app.use((req, res) => {
 // });
 
 pool.query('SELECT 1')
-  .then(() => {
+  .then(async () => {
     console.log('Database connected');
+    await initTables();
     app.listen(5000, () => {
       console.log('Server listening on port 5000');
     });
