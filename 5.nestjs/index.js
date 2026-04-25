@@ -37,19 +37,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// app.use((req, res, next) => {
-//     console.log("Request URL:", req.url);
-
-//     const oldJson = res.json;
-
-//     res.json = function (data) {
-//         console.log("Response JSON:", data);
-//         oldJson.apply(res, arguments);
-//     };
-
-//     next();
-// });
-
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
 /* =========================
@@ -72,15 +59,13 @@ app.post('/create/user', async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: err.message });
-
-
   }
 });
 
 /* =========================
    GET ALL USERS (READ)
 ========================= */
-app.get('/users', async (req, res) => {   
+app.get('/users', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users ORDER BY id ASC');
     res.json(result.rows);
@@ -101,7 +86,7 @@ app.get('/users/:id', async (req, res) => {
       'SELECT * FROM users WHERE id = $1',
       [id]
     );
-
+    
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
@@ -198,10 +183,11 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ─── PROFILES ────────────────────────────────────────────────────────────────
+// ─── PROFILE ──────────────────────────────────────────────────────────────────
 
 /* =========================
    CREATE PROFILE (POST)
+   Accepts multipart/form-data: user_id, bio, phone, avatar (file, optional)
 ========================= */
 app.post('/create/profile', upload.single('avatar'), async (req, res) => {
   try {
@@ -226,7 +212,7 @@ app.post('/create/profile', upload.single('avatar'), async (req, res) => {
 });
 
 /* =========================
-   GET ALL PROFILES (READ)
+   GET ALL PROFILES
 ========================= */
 app.get('/profiles', async (req, res) => {
   try {
@@ -241,14 +227,10 @@ app.get('/profiles', async (req, res) => {
 /* =========================
    GET SINGLE PROFILE
 ========================= */
-app.get('/profiles/:id', async (req, res) => {
+app.get('/profile/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
-    const result = await pool.query(
-      'SELECT * FROM profile WHERE id = $1',
-      [id]
-    );
+    const result = await pool.query('SELECT * FROM profile WHERE id=$1', [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found" });
@@ -263,8 +245,9 @@ app.get('/profiles/:id', async (req, res) => {
 
 /* =========================
    UPDATE PROFILE (PUT)
+   Accepts multipart/form-data: bio, phone, avatar (file, optional)
 ========================= */
-app.put('/profiles/:id', async (req, res) => {
+app.put('/profile/:id', upload.single('avatar'), async (req, res) => {
   try {
     const { id } = req.params;
     const { bio, phone } = req.body;
@@ -273,14 +256,17 @@ app.put('/profiles/:id', async (req, res) => {
       return res.status(400).json({ error: "bio and phone are required" });
     }
 
-    const result = await pool.query(
-      'UPDATE profile SET bio=$1, phone=$2 WHERE id=$3 RETURNING *',
-      [bio, phone, id]
-    );
-
-    if (result.rows.length === 0) {
+    const existing = await pool.query('SELECT * FROM profile WHERE id=$1', [id]);
+    if (existing.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found" });
     }
+
+    const avatar_url = req.file ? `/uploads/${req.file.filename}` : existing.rows[0].avatar_url;
+
+    const result = await pool.query(
+      'UPDATE profile SET bio=$1, phone=$2, avatar_url=$3, updated_at=NOW() WHERE id=$4 RETURNING *',
+      [bio, phone, avatar_url, id]
+    );
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -292,14 +278,10 @@ app.put('/profiles/:id', async (req, res) => {
 /* =========================
    DELETE PROFILE
 ========================= */
-app.delete('/profiles/:id', async (req, res) => {                                                                                                                                                            
+app.delete('/profile/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
-    const result = await pool.query(
-      'DELETE FROM profile WHERE id=$1 RETURNING *',
-      [id]
-    );
+    const result = await pool.query('DELETE FROM profile WHERE id=$1 RETURNING *', [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found" });
@@ -326,21 +308,8 @@ pool.query('SELECT 1')
   .then(async () => {
     console.log('Database connected');
     await initTables();
-    app.listen(5000, '0.0.0.0', () => {
-      const { networkInterfaces } = require('os');
-      const nets = networkInterfaces();
-      let localIP = 'localhost';
-      for (const iface of Object.values(nets)) {
-        for (const net of iface) {
-          if (net.family === 'IPv4' && !net.internal) {
-            localIP = net.address;
-            break;
-          }
-        }
-      }
-      console.log(`Server listening on port 5000`);
-      console.log(`Local:   http://localhost:5000`);
-      console.log(`Network: http://${localIP}:5000`);
+    app.listen(5000, () => {
+      console.log('Server listening on port 5000 ');
     });
   })
   .catch(err => {

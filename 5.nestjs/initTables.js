@@ -32,8 +32,6 @@ async function initTables() {
     )
   `);
 
-
-
   await createTable('profile', `
     CREATE TABLE profile (
       id         SERIAL PRIMARY KEY,
