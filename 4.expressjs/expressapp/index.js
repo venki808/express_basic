@@ -2,11 +2,35 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const pool = require('./database');
 const initTables = require('./initTables');
 
 const app = express();
 app.use(express.json());
+
+// ─── AUTH TOKEN STORE ────────────────────────────────────────────────────────
+// token → { userId, email }
+const tokenStore = new Map();
+
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// ─── AUTH MIDDLEWARE ─────────────────────────────────────────────────────────
+function authenticate(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+  const token = authHeader.slice(7);
+  const user = tokenStore.get(token);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  req.user = user;
+  next();
+}
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -80,7 +104,7 @@ app.post('/create/user', async (req, res) => {
 /* =========================
    GET ALL USERS (READ)
 ========================= */
-app.get('/users', async (req, res) => {   
+app.get('/users', authenticate, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users ORDER BY id ASC');
     res.json(result.rows);
@@ -93,7 +117,7 @@ app.get('/users', async (req, res) => {
 /* =========================
    GET SINGLE USER
 ========================= */
-app.get('/users/:id', async (req, res) => {
+app.get('/users/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -117,7 +141,7 @@ app.get('/users/:id', async (req, res) => {
 /* =========================
    UPDATE USER (PUT)
 ========================= */
-app.put('/users/:id', async (req, res) => {
+app.put('/users/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, password } = req.body;
@@ -145,7 +169,7 @@ app.put('/users/:id', async (req, res) => {
 /* =========================
    DELETE USER
 ========================= */
-app.delete('/users/:id', async (req, res) => {
+app.delete('/users/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -191,11 +215,23 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: "Invalid password" });
     }
 
-    res.json({ message: "Login success", user: { id: user.id, name: user.name, email: user.email } });
+    const token = generateToken();
+    tokenStore.set(token, { userId: user.id, email: user.email });
+
+    res.json({ message: "Login success", token, user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+/* =========================
+   LOGOUT (DELETE TOKEN)
+========================= */
+app.post('/logout', authenticate, (req, res) => {
+  const token = req.headers['authorization'].slice(7);
+  tokenStore.delete(token);
+  res.json({ message: "Logged out successfully" });
 });
 
 // ─── PROFILES ────────────────────────────────────────────────────────────────
@@ -203,7 +239,7 @@ app.post('/login', async (req, res) => {
 /* =========================
    CREATE PROFILE (POST)
 ========================= */
-app.post('/create/profile', upload.single('avatar'), async (req, res) => {
+app.post('/create/profile', authenticate, upload.single('avatar'), async (req, res) => {
   try {
     const { user_id, bio, phone } = req.body;
 
@@ -228,7 +264,7 @@ app.post('/create/profile', upload.single('avatar'), async (req, res) => {
 /* =========================
    GET ALL PROFILES (READ)
 ========================= */
-app.get('/profiles', async (req, res) => {
+app.get('/profiles', authenticate, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM profile ORDER BY id ASC');
     res.json(result.rows);
@@ -241,7 +277,7 @@ app.get('/profiles', async (req, res) => {
 /* =========================
    GET SINGLE PROFILE
 ========================= */
-app.get('/profiles/:id', async (req, res) => {
+app.get('/profiles/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -264,7 +300,7 @@ app.get('/profiles/:id', async (req, res) => {
 /* =========================
    UPDATE PROFILE (PUT)
 ========================= */
-app.put('/profiles/:id', async (req, res) => {
+app.put('/profiles/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { bio, phone } = req.body;
@@ -292,7 +328,7 @@ app.put('/profiles/:id', async (req, res) => {
 /* =========================
    DELETE PROFILE
 ========================= */
-app.delete('/profiles/:id', async (req, res) => {                                                                                                                                                            
+app.delete('/profiles/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
