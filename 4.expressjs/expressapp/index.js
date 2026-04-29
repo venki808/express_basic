@@ -389,3 +389,6 @@ pool.query('SELECT 1')
     console.error('Database connection failed:', err.message);
     process.exit(1);
   });
+
+
+  //test
