@@ -29,4 +29,4 @@ Thumbs.db
 .vscode/
 
 # Optional: coverage
-coverage/
+coverage/ 

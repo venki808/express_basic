@@ -300,7 +300,7 @@ app.get('/profiles/:id', authenticate, async (req, res) => {
 /* =========================
    UPDATE PROFILE (PUT)
 ========================= */
-app.put('/profiles/:id', authenticate, async (req, res) => {
+app.put('/profiles/:id', authenticate, upload.single('avatar'), async (req, res) => {
   try {
     const { id } = req.params;
     const { bio, phone } = req.body;
@@ -309,14 +309,20 @@ app.put('/profiles/:id', authenticate, async (req, res) => {
       return res.status(400).json({ error: "bio and phone are required" });
     }
 
-    const result = await pool.query(
-      'UPDATE profile SET bio=$1, phone=$2 WHERE id=$3 RETURNING *',
-      [bio, phone, id]
-    );
-
-    if (result.rows.length === 0) {
+    // Fetch existing profile to keep old avatar if no new file uploaded
+    const existing = await pool.query('SELECT avatar_url FROM profile WHERE id=$1', [id]);
+    if (existing.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found" });
     }
+
+    const avatar_url = req.file
+      ? `/uploads/${req.file.filename}`
+      : existing.rows[0].avatar_url;
+
+    const result = await pool.query(
+      'UPDATE profile SET bio=$1, phone=$2, avatar_url=$3 WHERE id=$4 RETURNING *',
+      [bio, phone, avatar_url, id]
+    );
 
     res.json(result.rows[0]);
   } catch (err) {
